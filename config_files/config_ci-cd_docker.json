@@ -1,0 +1,10 @@
+{
+        "repository": "repo url",
+        "gitbranch": "feature branch name",
+        "gitCredentials": "configured in jenkins",
+	"registry": "registry url if using any private registry",
+        "mailFrom":"email from",
+	"mailTo":"email to",
+	"approversGroup":"approvers name",
+	"kubeconfig":"kubernetes plugin configuration in jenkins"
+}
