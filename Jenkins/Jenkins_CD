@@ -1,0 +1,92 @@
+def sonarjob
+def sonarsource
+def repository
+def gitbranch
+def gitCredentials
+def registry
+def props
+pipeline {
+    agent any
+    stages {
+		stage('readConfig'){
+		steps{
+			script{
+				echo "Reading the configurations......"
+				props = readJSON file: "config_files/config_ci-cd_docker.json"
+				repository = props['repository']
+				gitbranch = props['gitbranch']
+				gitCredentials = props['gitCredentials']
+				registry = props['registry']
+				mailFrom = props['mailFrom']
+				mailTo = props['mailTo']
+				approversGroup = props['approversGroup']
+				kubeconfig = props['kubeconfig']
+				}
+		}
+		}
+		stage('approval') {
+		steps{
+			script{
+				emailext subject: "[Jenkins]${currentBuild.fullDisplayName}",
+				from: "${mailFrom}",
+				to: "${mailTo}",
+				body: '''JOB NAME: $PROJECT_NAME \nBUILD NUMBER: $BUILD_NUMBER \nPlease click to approve: ${BUILD_URL}input'''
+				timeout(time: 5, unit: 'MINUTES') {
+					echo "${approversGroup}"							
+					def deploymentDelay = input id: 'Deploy', message: 'Deploy to Kubernetes?', submitter: approversGroup, parameters: [choice(choices: ['0', '1', '2', '3', '4', '5', '10'], description: 'Minutes to delay deployment?', name: 'deploymentDelay')]
+                    sleep time: deploymentDelay.toInteger(), unit: 'MINUTES'
+					 echo ("Delay: "+deploymentDelay)
+				}
+			}
+		}
+		}
+		stage('deploytoKubernetes'){
+		steps{
+			script{
+				sh 'ls -ltr'
+				sh 'pwd'
+				 /*  dir('src/core/services/database/mserv_insert_data_mig_metadatatable') {
+					sh 'pwd'
+					kubernetesDeploy(configs: "mserv_insert_data_mig_metadatatable.yaml", kubeconfigId: kubeconfig) 
+					echo "Cleaning Workspace....."
+					cleanWs()
+					}}}}	*/
+					dir('src/core/services/config')
+					{
+					def files = findFiles()
+					files.each{ f -> 
+						if(f.directory) {
+                              echo "This is directory: ${f.name}"
+                              dir(f.name){
+                                  sh "ls -ltr"								  
+								 //echo "${f.name}.yaml"
+								  kubernetesDeploy(configs: "${f.name}.yaml", kubeconfigId: kubeconfig)    
+                                }
+                           }
+                        }
+					}
+					dir('src/core/services/database')
+					{
+					def files = findFiles()
+					files.each{ f -> 
+						if(f.directory) {
+                              echo "This is directory: ${f.name}"
+                              dir(f.name){
+                                  sh "ls -ltr"								  
+								 //echo "${f.name}.yaml"
+								  kubernetesDeploy(configs: "${f.name}.yaml", kubeconfigId: kubeconfig)    
+                                }
+                           }
+                        }
+					}
+					}
+				}
+			}	
+		}
+		post {
+		always {
+			echo "Cleaning Workspace....."
+			cleanWs()	
+		}
+		}
+}

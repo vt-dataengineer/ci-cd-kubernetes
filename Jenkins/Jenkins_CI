@@ -1,0 +1,126 @@
+def sonarjob
+def sonarsource
+def repository
+def gitbranch
+def gitCredentials
+def registry
+def props
+pipeline {
+    agent any
+    stages {
+		stage('readConfig'){
+		steps{
+              script{
+					echo "Reading the configurations......"
+					props = readJSON file: "config_files/config_ci-cd_docker.json"
+					repository = props['repository']
+					gitbranch = props['gitbranch']
+					gitCredentials = props['gitCredentials']
+					registry = props['registry']
+					mailFrom = props['mailFrom']
+					mailTo = props['mailTo']
+					approversGroup = props['approversGroup']
+					kubeconfig = props['kubeconfig']
+                    }
+                  }
+	}
+	stage('sonarqubeAnalysis'){
+	steps{
+		script{
+			scannerHome = tool 'sonarqube_scanner';
+			def files = findFiles glob: '**/src/**/*.py'
+			for (def i=0; i<files.length; i++) {
+				pythonFilePath = "${files[i].path}"  
+				echo "${pythonFilePath}"
+				sonarsource = pythonFilePath.take(pythonFilePath.lastIndexOf('/'))
+				sonarjob = sonarsource.substring(sonarsource.lastIndexOf('/')+1,sonarsource.length())
+				echo "${sonarsource}"
+				echo "${sonarjob}"
+				withSonarQubeEnv('SonarQube') {
+					echo "performing SonarQube analysis on ${JOB_NAME}"
+					sh 'pwd'
+					//sh 'ls -l'
+					//sh "${scannerHome}/bin/sonar-scanner -Dproject.settings=config_files/sonar-project.properties -Dsonar.projectName=$sonarjob -Dsonar.projectKey=$sonarjob -Dsonar.sources=$sonarsource"
+					}
+			}
+		}
+	}
+	}	
+	stage('dockerBuild') {
+	steps {
+	sh 'pwd'
+	echo  "${gitbranch} , ${gitCredentials}, ${repository}"
+	//git branch: "${gitbranch}", credentialsId: "${gitCredentials}", url: "${repository}"
+	sh 'ls -ltr'
+	sh 'pwd'
+	//sh 'ls -ltr'
+	// dir('src/core/services/database/service-db-connection-string') {
+	//	echo "Building docker images..."
+	//   sh "docker build -t nexus.idea.xpaas.io/repository/docker-dev/service-db-connection-string ."
+	//   sh "docker push nexus.idea.xpaas.io/repository/docker-dev/service-db-connection-string"			
+	// }
+	dir('src/core/services/config')
+	{
+		sh "pwd"
+		sh "ls"
+		script{
+			sh 'cp $WORKSPACE/createDocker.sh .'
+			sh 'chmod +x createDocker.sh'
+			sh './createDocker.sh'
+			def files = findFiles()
+			files.each{ f -> 
+			if(f.directory) {
+				echo "This is directory: ${f.name}"
+				//echo "${registry}"
+				dir(f.name){
+					sh "ls -ltr"
+					sonarjob = f.name
+					echo "Building docker images..."
+					sh "docker build -t $registry$f.name ."
+					sh "docker push $registry$f.name"
+					}
+			}
+			}
+		}
+	} 
+	
+	dir('src/core/services/database')
+	{
+		sh "pwd"
+		sh "ls"
+		script{
+			sh 'cp $WORKSPACE/createDocker.sh .'
+			sh 'chmod +x createDocker.sh'
+			sh './createDocker.sh'
+			def files = findFiles()
+			files.each{ f -> 
+			if(f.directory) {
+				echo "This is directory: ${f.name}"
+				//echo "${registry}"
+				dir(f.name){
+					sh "ls -ltr"
+					sonarjob = f.name
+					echo "Building docker images..."
+					sh "docker build -t $registry$f.name ."
+					sh "docker push $registry$f.name"
+					}
+			}
+			}
+		}
+	} 
+	}
+	}
+	}
+	post {
+		success {
+			echo "Triggering CD job for branch ${env.BRANCH_NAME}"
+			script{
+				build job: 'IDEA_CD_Microservices_Common_Pipeline'
+				}	 
+			}
+		always {
+			echo "Cleaning Workspace....."
+			cleanWs()	
+		}
+		}
+}
